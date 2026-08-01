@@ -285,30 +285,57 @@ end
 local function UnloadScript()
     Settings.Enabled = false
     
-    if RenderConnection then
-        RenderConnection:Disconnect()
-        RenderConnection = nil
-    end
-    
-    if InputConnection then
-        InputConnection:Disconnect()
-        InputConnection = nil
-    end
+    -- Safe Connection Disconnect Guard
+if RenderConnection then
+    local conn = RenderConnection
+    RenderConnection = nil
+    pcall(function()
+        if conn.Connected then
+            conn:Disconnect()
+        end
+    end)
+end
 
-    if CharacterConnection then
-        CharacterConnection:Disconnect()
-        CharacterConnection = nil
-    end
+if InputConnection then
+    local conn = InputConnection
+    InputConnection = nil
+    pcall(function()
+        if conn.Connected then
+            conn:Disconnect()
+        end
+    end)
+end
 
-    if RuntimeThread then
-        task.cancel(RuntimeThread)
-        RuntimeThread = nil
-    end
+if CharacterConnection then
+    local conn = CharacterConnection
+    CharacterConnection = nil
+    pcall(function()
+        if conn.Connected then
+            conn:Disconnect()
+        end
+    end)
+end
 
-    if TargetScanThread then
-        task.cancel(TargetScanThread)
-        TargetScanThread = nil
-    end
+-- Safe Thread Cancellation Guard
+if RuntimeThread then
+    local thread = RuntimeThread
+    RuntimeThread = nil
+    pcall(function()
+        if coroutine.status(thread) ~= "dead" and thread ~= coroutine.running() then
+            task.cancel(thread)
+        end
+    end)
+end
+
+if TargetScanThread then
+    local thread = TargetScanThread
+    TargetScanThread = nil
+    pcall(function()
+        if coroutine.status(thread) ~= "dead" and thread ~= coroutine.running() then
+            task.cancel(thread)
+        end
+    end)
+end
     
     if FOVCircle then
         pcall(function()
