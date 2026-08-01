@@ -51,48 +51,11 @@ local Settings = {
     WallCheck = true,
     TargetPart = "HumanoidRootPart",
     TargetType = "ALL",
-    AimKey = Enum.UserInputType.MouseButton2, -- Default RMB
-    AimMode = "Hold", -- "Hold", "Toggle", or "Always"
     Keybind = Enum.KeyCode.L,
     HideKeybind = Enum.KeyCode.Insert,
     KillKeybind = Enum.KeyCode.Delete,
     UIVisible = true
 }
-
-local IsAiming = false
-local IsBindingAimKey = false
-
--- Enum Formatting & Serialization Helpers
-local function GetKeyName(enumVal)
-    if not enumVal then return "NONE" end
-    if enumVal.EnumType == Enum.UserInputType then
-        if enumVal == Enum.UserInputType.MouseButton1 then return "LMB" end
-        if enumVal == Enum.UserInputType.MouseButton2 then return "RMB" end
-        if enumVal == Enum.UserInputType.MouseButton3 then return "MMB" end
-        return enumVal.Name
-    elseif enumVal.EnumType == Enum.KeyCode then
-        return enumVal.Name
-    end
-    return "NONE"
-end
-
-local function SerializeEnum(enumVal)
-    if typeof(enumVal) == "EnumItem" then
-        return { EnumType = tostring(enumVal.EnumType), Name = enumVal.Name }
-    end
-    return nil
-end
-
-local function DeserializeEnum(data)
-    if type(data) == "table" and data.EnumType and data.Name then
-        if data.EnumType == "KeyCode" and Enum.KeyCode[data.Name] then
-            return Enum.KeyCode[data.Name]
-        elseif data.EnumType == "UserInputType" and Enum.UserInputType[data.Name] then
-            return Enum.UserInputType[data.Name]
-        end
-    end
-    return nil
-end
 
 -- Config Persistence
 local ConfigFileName = "AimbotConfig.json"
@@ -108,9 +71,7 @@ local function SaveConfig()
             TeamCheck = Settings.TeamCheck,
             WallCheck = Settings.WallCheck,
             TargetPart = Settings.TargetPart,
-            TargetType = Settings.TargetType,
-            AimMode = Settings.AimMode,
-            AimKey = SerializeEnum(Settings.AimKey)
+            TargetType = Settings.TargetType
         }
         pcall(function()
             writefile(ConfigFileName, HttpService:JSONEncode(configData))
@@ -133,11 +94,6 @@ local function LoadConfig()
                     if result.WallCheck ~= nil then Settings.WallCheck = result.WallCheck end
                     if result.TargetPart ~= nil then Settings.TargetPart = result.TargetPart end
                     if result.TargetType ~= nil then Settings.TargetType = result.TargetType end
-                    if result.AimMode ~= nil then Settings.AimMode = result.AimMode end
-                    if result.AimKey ~= nil then
-                        local loadedKey = DeserializeEnum(result.AimKey)
-                        if loadedKey then Settings.AimKey = loadedKey end
-                    end
                 end
             end
         end)
@@ -320,6 +276,7 @@ local function ToggleUIVisibility()
     end
 end
 
+-- Completely stripped dangerous cleanups to prevent round-transition crashes
 local function UnloadScript()
     Settings.Enabled = false
     if FOVCircle then
@@ -382,8 +339,8 @@ local function SetupGUI()
     GUI.ScreenGui.Parent = uiParent
     
     GUI.MainFrame = Instance.new("Frame")
-    GUI.MainFrame.Size = UDim2.new(0, 280, 0, 580)
-    GUI.MainFrame.Position = UDim2.new(0, 20, 0.5, -290)
+    GUI.MainFrame.Size = UDim2.new(0, 280, 0, 550)
+    GUI.MainFrame.Position = UDim2.new(0, 20, 0.5, -275)
     GUI.MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
     GUI.MainFrame.BackgroundTransparency = 0
     GUI.MainFrame.Active = true
@@ -496,79 +453,20 @@ local function SetupGUI()
         SaveConfig()
     end)
 
-    -- Dynamic AimKey Button
-    GUI.Buttons.AimKey = CreateButton("KEY: " .. GetKeyName(Settings.AimKey), {X = 0.05, Y = 0, Z = 0, W = 400}, function()
-        IsBindingAimKey = true
-        GUI.Buttons.AimKey.Text = "KEY: [...]"
-    end)
-
-    -- AimMode UI Button (HOLD / TOGGLE / ALWAYS)
-    GUI.Buttons.AimMode = CreateButton("MODE: " .. string.upper(Settings.AimMode), {X = 0.55, Y = 0, Z = 0, W = 400}, function()
-        if Settings.AimMode == "Hold" then
-            Settings.AimMode = "Toggle"
-        elseif Settings.AimMode == "Toggle" then
-            Settings.AimMode = "Always"
-        else
-            Settings.AimMode = "Hold"
-        end
-        GUI.Buttons.AimMode.Text = "MODE: " .. string.upper(Settings.AimMode)
-        IsAiming = false
-        SaveConfig()
-    end)
-
-    GUI.Buttons.Hide = CreateButton("HIDE UI (INS)", {X = 0.05, Y = 0, Z = 0, W = 445}, function()
+    GUI.Buttons.Hide = CreateButton("HIDE UI (INS)", {X = 0.05, Y = 0, Z = 0, W = 400}, function()
         ToggleUIVisibility()
     end)
     GUI.Buttons.Hide.Size = UDim2.new(0, 252, 0, 35)
 
-    GUI.Buttons.Kill = CreateButton("KILL SCRIPT (DEL)", {X = 0.05, Y = 0, Z = 0, W = 488}, function()
+    GUI.Buttons.Kill = CreateButton("KILL SCRIPT (DEL)", {X = 0.05, Y = 0, Z = 0, W = 443}, function()
         UnloadScript()
     end)
     GUI.Buttons.Kill.Size = UDim2.new(0, 252, 0, 35)
     GUI.Buttons.Kill.BackgroundColor3 = Color3.fromRGB(150, 35, 35)
 end
 
--- Check if input matches configured AimKey
-local function IsAimInput(input)
-    if not Settings.AimKey then return true end
-    if typeof(Settings.AimKey) == "EnumItem" then
-        if Settings.AimKey.EnumType == Enum.KeyCode then
-            return input.KeyCode == Settings.AimKey
-        elseif Settings.AimKey.EnumType == Enum.UserInputType then
-            return input.UserInputType == Settings.AimKey
-        end
-    end
-    return false
-end
-
 local function SetupKeybind()
     UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        -- Dynamic Key Binding Listener
-        if IsBindingAimKey then
-            if input.UserInputType == Enum.UserInputType.MouseMovement then return end
-            
-            if input.KeyCode ~= Enum.KeyCode.Unknown then
-                Settings.AimKey = input.KeyCode
-            elseif input.UserInputType ~= Enum.UserInputType.None then
-                Settings.AimKey = input.UserInputType
-            end
-            
-            IsBindingAimKey = false
-            GUI.Buttons.AimKey.Text = "KEY: " .. GetKeyName(Settings.AimKey)
-            SaveConfig()
-            return
-        end
-
-        if IsAimInput(input) then
-            if not gameProcessed or (Settings.AimKey and Settings.AimKey.EnumType == Enum.UserInputType) then
-                if Settings.AimMode == "Hold" then
-                    IsAiming = true
-                elseif Settings.AimMode == "Toggle" then
-                    IsAiming = not IsAiming
-                end
-            end
-        end
-
         if gameProcessed then return end
         
         if input.KeyCode == Settings.Keybind then
@@ -580,12 +478,6 @@ local function SetupKeybind()
             ToggleUIVisibility()
         elseif input.KeyCode == Settings.KillKeybind then
             UnloadScript()
-        end
-    end)
-
-    UserInputService.InputEnded:Connect(function(input)
-        if Settings.AimMode == "Hold" and IsAimInput(input) then
-            IsAiming = false
         end
     end)
 end
@@ -646,12 +538,6 @@ local function Initialize()
             end
             
             if not Settings.Enabled then
-                return
-            end
-            
-            -- Check AimKey status
-            local shouldAim = (Settings.AimMode == "Always" or not Settings.AimKey) or IsAiming
-            if not shouldAim then
                 return
             end
             
