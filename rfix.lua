@@ -28,11 +28,9 @@ end
 local raw_mousemoverel = mousemoverel or (Input and Input.MouseMove) or (mousemove)
 local function SafeMouseMoveRel(x, y)
     if not raw_mousemoverel then return end
-    -- Check for NaN, nil, or Infinity
     if x ~= x or y ~= y or x == math.huge or y == math.huge or x == -math.huge or y == -math.huge then
         return
     end
-    -- Prevent extreme jumps that crash C++ buffers
     if math.abs(x) > 2000 or math.abs(y) > 2000 then
         return
     end
@@ -141,11 +139,7 @@ pcall(function()
 end)
 
 local StartTime = tick()
-local InputConnection = nil
-local CharacterConnection = nil
 local RenderConnection = nil
-local RuntimeThread = nil
-local TargetScanThread = nil
 
 local function UpdateRuntimeLabel()
     local runtime = math.floor(tick() - StartTime)
@@ -282,74 +276,15 @@ local function ToggleUIVisibility()
     end
 end
 
+-- Completely stripped dangerous cleanups to prevent round-transition crashes
 local function UnloadScript()
     Settings.Enabled = false
-    
-    -- Safe Connection Disconnect Guard
-if RenderConnection then
-    local conn = RenderConnection
-    RenderConnection = nil
-    pcall(function()
-        if conn.Connected then
-            conn:Disconnect()
-        end
-    end)
-end
-
-if InputConnection then
-    local conn = InputConnection
-    InputConnection = nil
-    pcall(function()
-        if conn.Connected then
-            conn:Disconnect()
-        end
-    end)
-end
-
-if CharacterConnection then
-    local conn = CharacterConnection
-    CharacterConnection = nil
-    pcall(function()
-        if conn.Connected then
-            conn:Disconnect()
-        end
-    end)
-end
-
--- Safe Thread Cancellation Guard
-if RuntimeThread then
-    local thread = RuntimeThread
-    RuntimeThread = nil
-    pcall(function()
-        if coroutine.status(thread) ~= "dead" and thread ~= coroutine.running() then
-            task.cancel(thread)
-        end
-    end)
-end
-
-if TargetScanThread then
-    local thread = TargetScanThread
-    TargetScanThread = nil
-    pcall(function()
-        if coroutine.status(thread) ~= "dead" and thread ~= coroutine.running() then
-            task.cancel(thread)
-        end
-    end)
-end
-    
     if FOVCircle then
-        pcall(function()
-            FOVCircle.Visible = false
-            FOVCircle:Remove()
-        end)
+        pcall(function() FOVCircle:Remove() end)
     end
-    
     if GUI.ScreenGui then
-        GUI.ScreenGui:Destroy()
+        pcall(function() GUI.ScreenGui:Destroy() end)
     end
-    
-    UserInputService.MouseBehavior = Enum.MouseBehavior.Default
-    UserInputService.MouseIconEnabled = true
 end
 
 local function CreateButton(text, position, callback)
@@ -420,7 +355,7 @@ local function SetupGUI()
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(1, 0, 0, 40)
     title.BackgroundTransparency = 1
-    title.Text = "Aim System v3.5 (Stable)"
+    title.Text = "Aim System v3.5 (Persistent)"
     title.TextColor3 = Color3.fromRGB(255, 255, 255)
     title.Font = Enum.Font.GothamBold
     title.TextSize = 17
@@ -531,7 +466,7 @@ local function SetupGUI()
 end
 
 local function SetupKeybind()
-    InputConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    UserInputService.InputBegan:Connect(function(input, gameProcessed)
         if gameProcessed then return end
         
         if input.KeyCode == Settings.Keybind then
@@ -552,7 +487,8 @@ local function Initialize()
     SetupGUI()
     SetupKeybind()
     
-    CharacterConnection = LocalPlayer.CharacterAdded:Connect(function()
+    -- Auto re-create UI if character/spawn clears it out
+    LocalPlayer.CharacterAdded:Connect(function()
         task.wait(1)
         if not GUI.ScreenGui or not GUI.ScreenGui.Parent then
             SetupGUI()
@@ -565,27 +501,26 @@ local function Initialize()
                 repeat task.wait() until game:IsLoaded()
                 task.wait(2)
                 pcall(function()
-                    loadstring(game:HttpGet("https://raw.githubusercontent.com/rekdvoid/files/refs/heads/main/rfix.lua"))()
+                    loadstring(game:HttpGet("https://github.com/rekdvoid/files/releases/download/rfgmg/rfix.lua"))()
                 end)
             ]])
         end)
     end
     
-    RuntimeThread = task.spawn(function()
+    task.spawn(function()
         while true do
             pcall(UpdateRuntimeLabel)
             task.wait(1)
         end
     end)
 
-    TargetScanThread = task.spawn(function()
+    task.spawn(function()
         while true do
             pcall(UpdateTargetCache)
             task.wait(0.2)
         end
     end)
     
-    -- RenderStepped connection replacing BindToRenderStep to avoid engine pipeline crashes
     RenderConnection = RunService.RenderStepped:Connect(function()
         pcall(function()
             local Camera = GetCamera()
